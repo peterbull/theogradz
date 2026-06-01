@@ -65,7 +65,8 @@ pub fn main(init: std.process.Init) !void {
 
     const f32_type = @TypeOf(F32FromSlice4);
     std.debug.print("idx: {}\n\n", .{f32_type});
-    std.debug.print("before: {any}\n\n", .{F32FromSlice.data});
+    std.debug.print("before1: {any}\n\n", .{F32FromSlice3.data});
+    std.debug.print("before2: {any}\n\n", .{F32FromSlice4.data});
     var res = try F32FromSlice3.matmul(&F32FromSlice4, gpa);
     std.debug.print("res: {any}\n\n", .{res.data});
     defer res.deinit();
