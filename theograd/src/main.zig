@@ -8,6 +8,7 @@ const Tensor = @import("tensor.zig").Tensor;
 
 pub fn main(init: std.process.Init) !void {
     const gpa = init.gpa;
+    const io = init.io;
     var shape_arr = [_]usize{
         3,
         4,
@@ -67,7 +68,11 @@ pub fn main(init: std.process.Init) !void {
     std.debug.print("idx: {}\n\n", .{f32_type});
     std.debug.print("before1: {any}\n\n", .{F32FromSlice3.data});
     std.debug.print("before2: {any}\n\n", .{F32FromSlice4.data});
+    const start = std.Io.Clock.real.now(io);
     var res = try F32FromSlice3.matmul(&F32FromSlice4, gpa);
-    std.debug.print("res: {any}\n\n", .{res.data});
+    const finish = std.Io.Clock.real.now(io);
+    const elapsed: f64 = (@as(f64, @floatFromInt(finish.nanoseconds)) - @as(f64, @floatFromInt(start.nanoseconds))) / 1_000_000.00;
+
+    std.debug.print("elapsed ms : {any}\n\n", .{elapsed});
     defer res.deinit();
 }

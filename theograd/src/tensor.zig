@@ -154,11 +154,27 @@ pub fn Tensor(comptime T: type) type {
             if (K != tens.shape[0]) return tensorError(TensorError.SHAPE_MISMATCH); // 3
             var result_shape = [_]usize{ M, N };
             var result = try Tensor(T).zeros(&result_shape, allocator);
-            for (0..M) |i| {
-                for (0..N) |j| {
+            // slow path, when indexing the tens tensor we're moving like it's col major
+            // on cpu, a 64 byte l1 cache line gets loaded for each lookup. in larger tensors
+            // this version will waste those free lookups
+            for (0..M) |i| { // 0, 1
+                for (0..N) |j| { // 0, 1
                     var total: T = 0;
-                    for (0..K) |k| {
+                    for (0..K) |k| { // 0..3
+                        // [i, j, k]
+                        // [0, 0, 0]
+                        // [0, 0, 1]
+                        // [0, 0, 2]
+                        // [0, 1, 0]
+                        // ...
+
                         total += self.at(&.{ i, k }) * tens.at(&.{ k, j });
+                        // self.data = [1,2,3,4,5,6] -------- tens.data = [1,2,3,4,5,6]
+                        // shaped self.data = [[1,2,3],  shaped tens.data = [[1,2],
+                        //                     [4,5,6]]                      [3,4],
+                        //                                                   [5,6]]
+                        //
+
                     }
                     result.set(&.{ i, j }, total);
                 }
