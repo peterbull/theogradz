@@ -156,27 +156,54 @@ pub fn Tensor(comptime T: type) type {
             var result = try Tensor(T).zeros(&result_shape, allocator);
             // slow path, when indexing the tens tensor we're moving like it's col major
             // on cpu, a 64 byte l1 cache line gets loaded for each lookup. in larger tensors
-            // this version will waste those free lookups
-            for (0..M) |i| { // 0, 1
-                for (0..N) |j| { // 0, 1
-                    var total: T = 0;
-                    for (0..K) |k| { // 0..3
-                        // [i, j, k]
-                        // [0, 0, 0]
-                        // [0, 0, 1]
-                        // [0, 0, 2]
-                        // [0, 1, 0]
-                        // ...
+            // this version will waste those free lookups. zig compiler is pretty smart though
+            // it does a lot of optimization even when we don't
+            // for (0..M) |i| { // 0, 1
+            //     for (0..N) |j| { // 0, 1
+            //         var total: T = 0;
+            //         for (0..K) |k| { // 0..3
+            //             // [i, j, k]
+            //             // [0, 0, 0]
+            //             // [0, 0, 1]
+            //             // [0, 0, 2]
+            //             // [0, 1, 0]
+            //             // ...
+            //
+            //             total += self.at(&.{ i, k }) * tens.at(&.{ k, j });
+            //             // self.data = [1,2,3,4,5,6] -------- tens.data = [1,2,3,4,5,6]
+            //             // shaped self.data = [[1,2,3],  shaped tens.data = [[1,2],
+            //             //                     [4,5,6]]                      [3,4],
+            //             //                                                   [5,6]]
+            //             //
+            //
+            //         }
+            //         result.set(&.{ i, j }, total);
+            //     }
+            // }
 
-                        total += self.at(&.{ i, k }) * tens.at(&.{ k, j });
+            for (0..M) |i| { // 0, 1
+                for (0..K) |k| { // 0, 1
+                    const a = self.at(&.{ i, k });
+                    for (0..N) |j| { // 0..3
+                        // [i, k, j]
+                        // [0, 0, 0]
+                        // [0, 1, 0]
+                        // [0, 2, 0]
+                        // [0, 0, 1]
+                        // ...
+                        // self at i,k becomes constant for this entire inner loop
+                        // and gets hoisted to register. reordering the k and j of the loop
+                        // lets us keep hitting that same cache line, but it's a little
+                        // less intuitive because instead of a one and done dot product each
+                        // pass "contributes" to the cell.
+                        const curr = result.at(&.{ i, j });
                         // self.data = [1,2,3,4,5,6] -------- tens.data = [1,2,3,4,5,6]
                         // shaped self.data = [[1,2,3],  shaped tens.data = [[1,2],
                         //                     [4,5,6]]                      [3,4],
                         //                                                   [5,6]]
                         //
-
+                        result.set(&.{ i, j }, curr + a * tens.at(&.{ k, j }));
                     }
-                    result.set(&.{ i, j }, total);
                 }
             }
 

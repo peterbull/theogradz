@@ -2,10 +2,6 @@ const std = @import("std");
 const graditude = @import("graditude");
 const Tensor = @import("tensor.zig").Tensor;
 
-// pub fn matmul(x: Tensor, y: Tensor) Tensor {
-//     unreachable;
-// }
-
 pub fn main(init: std.process.Init) !void {
     const gpa = init.gpa;
     const io = init.io;
@@ -55,12 +51,12 @@ pub fn main(init: std.process.Init) !void {
     const idx1 = F32FromSlice.at(&.{ 1, 0 });
     std.debug.print("idx: {}", .{idx1});
     std.debug.print("break\n", .{});
-    var data_arr = [_]f32{ 1, 2, 3, 4, 5, 6 };
-    var data_arr2 = [_]f32{ 1, 2, 3, 4, 5, 6 };
-    var mat_1_shape = [_]usize{ 2, 3 };
-    var mat_2_shape = [_]usize{ 3, 2 };
-    var F32FromSlice3: Tensor(f32) = try Tensor(f32).fromSlice(&data_arr, &mat_1_shape, gpa);
-    var F32FromSlice4: Tensor(f32) = try Tensor(f32).fromSlice(&data_arr2, &mat_2_shape, gpa);
+    // var data_arr = [_]f32{ 1, 2, 3, 4, 5, 6 };
+    // var data_arr2 = [_]f32{ 1, 2, 3, 4, 5, 6 };
+    var mat_1_shape = [_]usize{ 256, 256 };
+    var mat_2_shape = [_]usize{ 256, 256 };
+    var F32FromSlice3: Tensor(f32) = try Tensor(f32).zeros(&mat_1_shape, gpa);
+    var F32FromSlice4: Tensor(f32) = try Tensor(f32).zeros(&mat_2_shape, gpa);
     defer F32FromSlice3.deinit();
     defer F32FromSlice4.deinit();
 
@@ -69,10 +65,17 @@ pub fn main(init: std.process.Init) !void {
     std.debug.print("before1: {any}\n\n", .{F32FromSlice3.data});
     std.debug.print("before2: {any}\n\n", .{F32FromSlice4.data});
     const start = std.Io.Clock.real.now(io);
-    var res = try F32FromSlice3.matmul(&F32FromSlice4, gpa);
+    const loops = 2;
+    for (0..loops) |_| {
+        var test_mat = try F32FromSlice3.matmul(&F32FromSlice4, gpa);
+        test_mat.deinit();
+    }
+
     const finish = std.Io.Clock.real.now(io);
     const elapsed: f64 = (@as(f64, @floatFromInt(finish.nanoseconds)) - @as(f64, @floatFromInt(start.nanoseconds))) / 1_000_000.00;
 
-    std.debug.print("elapsed ms : {any}\n\n", .{elapsed});
+    var res = try F32FromSlice3.matmul(&F32FromSlice4, gpa);
     defer res.deinit();
+    // std.debug.print("result: {any}", .{res.data});
+    std.debug.print("{any} loops in ms : {any}\n\n", .{ loops, elapsed });
 }
