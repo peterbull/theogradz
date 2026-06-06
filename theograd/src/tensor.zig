@@ -10,12 +10,15 @@ fn numItems(shape: []usize) usize {
     return total;
 }
 
+const PaddingLength = struct { len_raw: usize, len_padded: usize };
 pub fn Tensor(comptime T: type) type {
     return struct {
         data: []T,
         allocator: std.mem.Allocator,
         shape: []usize,
         stride: []usize,
+
+        len: usize,
 
         const Self = @This();
 
@@ -59,19 +62,41 @@ pub fn Tensor(comptime T: type) type {
             }
             return common_dim;
         }
+        pub fn getVecWidth() usize {
+            return 128 / @bitSizeOf(T);
+        }
+
+        pub fn getPaddingLength(shape: []usize) PaddingLength {
+            // get the padded length of the tensor
+            const len_raw = numItems(shape);
+            const vec_width = getVecWidth();
+            const len_padded = (len_raw + vec_width - 1) / vec_width * vec_width;
+            return PaddingLength{ .len_raw = len_raw, .len_padded = len_padded };
+        }
 
         pub fn empty(shape: []usize, allocator: std.mem.Allocator) !Self {
-            const total = numItems(shape);
-            const data = try allocator.alloc(T, total);
+            const padding_length = getPaddingLength(shape);
+            const data = try allocator.alloc(T, padding_length.len_padded);
             const stride = try getStride(shape, allocator);
             const shape_copy = try allocator.dupe(usize, shape);
-            return Self{ .data = data, .shape = shape_copy, .allocator = allocator, .stride = stride };
+            return Self{ .data = data, .shape = shape_copy, .allocator = allocator, .stride = stride, .len = padding_length.len_raw };
         }
 
         pub fn zeros(shape: []usize, allocator: std.mem.Allocator) !Self {
             const self = try Self.empty(shape, allocator);
             @memset(self.data, 0);
             return self;
+        }
+
+        pub fn fromSlice(data: []T, shape: []usize, allocator: std.mem.Allocator) !Self {
+            const padding_length = getPaddingLength(shape);
+            try ensureValidShape(data, padding_length.len_raw);
+            const padded_data = try allocator.alloc(T, padding_length.len_padded);
+            @memcpy(padded_data[0..data.len], data);
+            @memset(padded_data[data.len..], 0);
+            const stride = try getStride(shape, allocator);
+            const shape_copy = try allocator.dupe(usize, shape);
+            return Self{ .data = padded_data, .shape = shape_copy, .allocator = allocator, .stride = stride, .len = padding_length.len_raw };
         }
 
         fn getStride(shape: []usize, allocator: std.mem.Allocator) ![]usize {
@@ -129,7 +154,6 @@ pub fn Tensor(comptime T: type) type {
             const flat_index = self.getFlatIndex(indices);
             self.data[flat_index] = value;
         }
-
         pub fn matmul(self: *Self, tens: *Tensor(T), allocator: std.mem.Allocator) !Tensor(T) {
 
             // go through rows 0..end(mat1)
@@ -180,7 +204,6 @@ pub fn Tensor(comptime T: type) type {
             //         result.set(&.{ i, j }, total);
             //     }
             // }
-
             for (0..M) |i| { // 0, 1
                 for (0..K) |k| { // 0, 1
                     const a = self.at(&.{ i, k });
@@ -210,15 +233,6 @@ pub fn Tensor(comptime T: type) type {
             return result;
         }
 
-        pub fn fromSlice(data: []T, shape: []usize, allocator: std.mem.Allocator) !Self {
-            const total = numItems(shape);
-            try ensureValidShape(data, total);
-            const data_copy = try allocator.dupe(T, data);
-            const stride = try getStride(shape, allocator);
-            const shape_copy = try allocator.dupe(usize, shape);
-            return Self{ .data = data_copy, .shape = shape_copy, .allocator = allocator, .stride = stride };
-        }
-
         pub fn deinit(self: *Self) void {
             self.allocator.free(self.data);
             self.allocator.free(self.shape);
@@ -235,7 +249,7 @@ test "tensor empty has correct shape" {
 
     try std.testing.expectEqual(@as(usize, 3), tens.shape[0]);
     try std.testing.expectEqual(@as(usize, 4), tens.shape[1]);
-    try std.testing.expectEqual(@as(usize, 12), tens.data.len);
+    try std.testing.expectEqual(@as(usize, 12), tens.len);
 }
 
 test "tensor zeros are all zero" {
@@ -283,7 +297,7 @@ test "tensor fromSlice has correct data" {
     var tens = try Tensor(f32).fromSlice(&data, &shape, gpa);
     defer tens.deinit();
 
-    try std.testing.expectEqual(@as(usize, 4), tens.data.len);
+    try std.testing.expectEqual(@as(usize, 4), tens.len);
     try std.testing.expectEqual(@as(f32, 1), tens.data[0]);
     try std.testing.expectEqual(@as(f32, 4), tens.data[3]);
 }

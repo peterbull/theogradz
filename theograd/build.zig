@@ -86,7 +86,12 @@ pub fn build(b: *std.Build) void {
 
     // debug
     exe.root_module.strip = false;
+    // output assembly
+    const asm_file = exe.getEmittedAsm();
+    const wf = b.addWriteFiles();
+    _ = wf.addCopyFile(asm_file, "../../../zig-out/main.s");
 
+    b.getInstallStep().dependOn(&wf.step);
     // This declares intent for the executable to be installed into the
     // install prefix when running `zig build` (i.e. when executing the default
     // step). By default the install prefix is `zig-out/` but can be overridden
