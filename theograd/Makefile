@@ -7,3 +7,5 @@ bench:
 run-asm:
 	zig build -Doptimize=ReleaseFast
 
+test:
+	zig test src/tensor.zig

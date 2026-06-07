@@ -51,12 +51,16 @@ pub fn main(init: std.process.Init) !void {
     const idx1 = F32FromSlice.at(&.{ 1, 0 });
     std.debug.print("idx: {}", .{idx1});
     std.debug.print("break\n", .{});
-    // var data_arr = [_]f32{ 1, 2, 3, 4, 5, 6 };
-    // var data_arr2 = [_]f32{ 1, 2, 3, 4, 5, 6 };
+    // var data_arr_1 = [_]f32{ 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 1, 2, 3, 4, 5 };
+    // var data_arr_2 = [_]f32{ 1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 2, 3 };
+    // var mat_1_shape = [_]usize{ 7, 5 };
+    // var mat_2_shape = [_]usize{ 5, 3 };
+    // var F32FromSlice3: Tensor(f32) = try Tensor(f32).fromSlice(&data_arr_1, &mat_1_shape, gpa);
+    // var F32FromSlice4: Tensor(f32) = try Tensor(f32).fromSlice(&data_arr_2, &mat_2_shape, gpa);
     var mat_1_shape = [_]usize{ 256, 256 };
     var mat_2_shape = [_]usize{ 256, 256 };
-    var F32FromSlice3: Tensor(f32) = try Tensor(f32).zeros(&mat_1_shape, gpa);
-    var F32FromSlice4: Tensor(f32) = try Tensor(f32).zeros(&mat_2_shape, gpa);
+    var F32FromSlice3: Tensor(f32) = try Tensor(f32).rand(&mat_1_shape, gpa);
+    var F32FromSlice4: Tensor(f32) = try Tensor(f32).rand(&mat_2_shape, gpa);
     defer F32FromSlice3.deinit();
     defer F32FromSlice4.deinit();
 
@@ -76,6 +80,7 @@ pub fn main(init: std.process.Init) !void {
 
     var res = try F32FromSlice3.matmul(&F32FromSlice4, gpa);
     defer res.deinit();
-    // std.debug.print("result: {any}", .{res.data});
+    // expect {6, 12, 18, 6, 12, 18, 6, 12, 18}
+    std.debug.print("result: {any}", .{res.data});
     std.debug.print("{any} loops in ms : {any}\n\n", .{ loops, elapsed });
 }

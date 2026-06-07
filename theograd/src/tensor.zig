@@ -17,7 +17,6 @@ pub fn Tensor(comptime T: type) type {
         allocator: std.mem.Allocator,
         shape: []usize,
         stride: []usize,
-
         len: usize,
 
         const Self = @This();
@@ -62,24 +61,29 @@ pub fn Tensor(comptime T: type) type {
             }
             return common_dim;
         }
-        pub fn getVecWidth() usize {
+        pub fn getVecWidth() comptime_int {
             return 128 / @bitSizeOf(T);
         }
 
         pub fn getPaddingLength(shape: []usize) PaddingLength {
             // get the padded length of the tensor
             const len_raw = numItems(shape);
-            const vec_width = getVecWidth();
+            const vec_width = comptime getVecWidth();
             const len_padded = (len_raw + vec_width - 1) / vec_width * vec_width;
             return PaddingLength{ .len_raw = len_raw, .len_padded = len_padded };
         }
 
         pub fn empty(shape: []usize, allocator: std.mem.Allocator) !Self {
-            const padding_length = getPaddingLength(shape);
-            const data = try allocator.alloc(T, padding_length.len_padded);
+            const vec_width = getVecWidth();
+            const N = shape[shape.len - 1];
+            const N_padded = (N + vec_width - 1) / vec_width * vec_width;
+            const num_rows = numItems(shape) / N;
+            const total_padded = num_rows * N_padded;
+
+            const data = try allocator.alloc(T, total_padded);
             const stride = try getStride(shape, allocator);
             const shape_copy = try allocator.dupe(usize, shape);
-            return Self{ .data = data, .shape = shape_copy, .allocator = allocator, .stride = stride, .len = padding_length.len_raw };
+            return Self{ .data = data, .shape = shape_copy, .allocator = allocator, .stride = stride, .len = numItems(shape) };
         }
 
         pub fn zeros(shape: []usize, allocator: std.mem.Allocator) !Self {
@@ -88,25 +92,43 @@ pub fn Tensor(comptime T: type) type {
             return self;
         }
 
+        pub fn rand(shape: []usize, allocator: std.mem.Allocator) !Self {
+            const self = try Self.empty(shape, allocator);
+            var prng = std.Random.DefaultPrng.init(42);
+            const random = prng.random();
+            for (self.data) |*item| {
+                item.* = random.float(T);
+            }
+            return self;
+        }
         pub fn fromSlice(data: []T, shape: []usize, allocator: std.mem.Allocator) !Self {
             const padding_length = getPaddingLength(shape);
             try ensureValidShape(data, padding_length.len_raw);
-            const padded_data = try allocator.alloc(T, padding_length.len_padded);
-            @memcpy(padded_data[0..data.len], data);
-            @memset(padded_data[data.len..], 0);
+
+            const vec_width = getVecWidth();
+            const N = shape[shape.len - 1];
+            const N_padded = (N + vec_width - 1) / vec_width * vec_width;
+            const num_rows = padding_length.len_raw / N;
+
+            const padded_data = try allocator.alloc(T, num_rows * N_padded);
+            @memset(padded_data, 0);
+
+            for (0..num_rows) |row| {
+                const src = data[row * N .. row * N + N];
+                const dst = padded_data[row * N_padded .. row * N_padded + N];
+                @memcpy(dst, src);
+            }
+
             const stride = try getStride(shape, allocator);
             const shape_copy = try allocator.dupe(usize, shape);
             return Self{ .data = padded_data, .shape = shape_copy, .allocator = allocator, .stride = stride, .len = padding_length.len_raw };
         }
-
         fn getStride(shape: []usize, allocator: std.mem.Allocator) ![]usize {
             const stride = try allocator.alloc(usize, shape.len);
 
             // init stride is always 1
             stride[shape.len - 1] = 1;
 
-            // then walk backwards from the shape end and multiply each time along the way
-            // except for the first dim
             var i: usize = shape.len - 1;
             while (i > 0) {
                 i -= 1;
@@ -119,10 +141,20 @@ pub fn Tensor(comptime T: type) type {
         fn getFlatIndex(self: *Self, indices: []const usize) usize {
             var flat_index: usize = 0;
             for (indices, 0..) |idx, i| {
-                flat_index += idx * self.stride[i];
+                flat_index += idx * self.getDataStride(i);
             }
-
             return flat_index;
+        }
+
+        fn getDataStride(self: *Self, dim: usize) usize {
+            const vec_width = getVecWidth();
+            var result: usize = 1;
+            var i: usize = self.shape.len - 1;
+            while (i > dim) : (i -= 1) {
+                const padded = (self.shape[i] + vec_width - 1) / vec_width * vec_width;
+                result *= padded;
+            }
+            return result;
         }
 
         pub fn at(self: *Self, indices: []const usize) T {
@@ -175,9 +207,15 @@ pub fn Tensor(comptime T: type) type {
             const M = self.shape[0]; // 2
             const K = self.shape[1]; // 3
             const N = tens.shape[1]; // 2
+            // std.debug.print("M val: {any}", .{M});
+            // std.debug.print("N val: {any}", .{N});
+            // std.debug.print("K val: {any}", .{K});
             if (K != tens.shape[0]) return tensorError(TensorError.SHAPE_MISMATCH); // 3
             var result_shape = [_]usize{ M, N };
             var result = try Tensor(T).zeros(&result_shape, allocator);
+            // std.debug.print("result shape: {any}\n", .{result.shape});
+            // std.debug.print("result data len: {}\n", .{result.data.len});
+            // std.debug.print("result getDataStride(0): {}\n", .{result.getDataStride(0)});
             // slow path, when indexing the tens tensor we're moving like it's col major
             // on cpu, a 64 byte l1 cache line gets loaded for each lookup. in larger tensors
             // this version will waste those free lookups. zig compiler is pretty smart though
@@ -204,29 +242,85 @@ pub fn Tensor(comptime T: type) type {
             //         result.set(&.{ i, j }, total);
             //     }
             // }
-            for (0..M) |i| { // 0, 1
-                for (0..K) |k| { // 0, 1
-                    const a = self.at(&.{ i, k });
-                    for (0..N) |j| { // 0..3
-                        // [i, k, j]
-                        // [0, 0, 0]
-                        // [0, 1, 0]
-                        // [0, 2, 0]
-                        // [0, 0, 1]
-                        // ...
-                        // self at i,k becomes constant for this entire inner loop
-                        // and gets hoisted to register. reordering the k and j of the loop
-                        // lets us keep hitting that same cache line, but it's a little
-                        // less intuitive because instead of a one and done dot product each
-                        // pass "contributes" to the cell.
-                        const curr = result.at(&.{ i, j });
-                        // self.data = [1,2,3,4,5,6] -------- tens.data = [1,2,3,4,5,6]
-                        // shaped self.data = [[1,2,3],  shaped tens.data = [[1,2],
-                        //                     [4,5,6]]                      [3,4],
-                        //                                                   [5,6]]
+            //
+            // for (0..M) |i| { // 0, 1
+            //     for (0..K) |k| { // 0, 1
+            //         const a = self.at(&.{ i, k });
+            //         // broadcast to a vector of vec_width copies
+            //         const vec_width = comptime getVecWidth();
+            //         const bcast_vec: @Vector(vec_width, T) = @splat(a);
+            //         const t_offset = k * tens.stride[0];
+            //         const r_offset = i * result.stride[0];
+            //         var j: usize = 0;
+            //
+            //         const N_padded = (N + vec_width - 1) / vec_width * vec_width;
+            //         while (j < N_padded) : (j += vec_width) {
+            //             const t_vec: @Vector(vec_width, T) = tens.data[t_offset + j ..][0..vec_width].*;
+            //             var r_vec: @Vector(vec_width, T) = result.data[r_offset + j ..][0..vec_width].*;
+            //             r_vec = r_vec + bcast_vec * t_vec;
+            //
+            //             // a lot of little writes here
+            //             // next item to fix
+            //             // probably need to swap back ikj to ijk now
+            //             // that it's actually vectorized
+            //             result.data[r_offset + j ..][0..vec_width].* = r_vec;
+            //         }
+            //     }
+            // }
+            //
+            // const padding_len_tens = getPaddingLength(tens.shape);
+            // const padding_len_self = getPaddingLength(self.shape);
+            const vec_width = getVecWidth();
+            const N_padded = tens.getDataStride(0);
+            // std.debug.print("tens padding: {any}\n", .{padding_len_tens});
+            // std.debug.print("self padding: {any}\n", .{padding_len_self});
+            // std.debug.print("vec_width: {any}\n", .{vec_width});
+            // std.debug.print("n_padded: {any}\n", .{N_padded});
+
+            for (0..M) |i| {
+                const r_offset = result.getDataStride(0) * i;
+                var j: usize = 0;
+                while (j < N_padded) : (j += vec_width) {
+                    var r_vec: @Vector(vec_width, T) = @splat(0);
+                    for (0..K) |k| {
+                        const a = self.at(&.{ i, k });
+                        // std.debug.print("a: {any}\n", .{a});
+                        const bcast_vec: @Vector(vec_width, T) = @splat(a);
+                        // std.debug.print("bcast_vec: {any}\n", .{bcast_vec});
+                        const t_offset = k * tens.getDataStride(0);
+                        // std.debug.print("t_offset: {any}\n", .{t_offset});
+                        const t_vec: @Vector(vec_width, T) = tens.data[t_offset + j ..][0..vec_width].*;
+                        // std.debug.print("t_vec: {any}\n", .{t_vec});
+                        r_vec += bcast_vec * t_vec;
+                        // std.debug.print("r_vec: {any}\n", .{r_vec});
+
+                        // self.data(raw)    = { 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 1, 2, 3, 4, 5 } len: 35
+                        // self.data(padded) = { 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 0} len: 36
                         //
-                        result.set(&.{ i, j }, curr + a * tens.at(&.{ k, j }));
+                        // tens.data(raw)    = { 1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 2, 3 } len: 15
+                        // tens.data(padded) = { 1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 2, 3, 0 } len: 16
+                        // shaped self.data = [[1,2,3,4,5],  shaped tens.data =  [[1,2,3],   [M=7,K=5] @ [K=5,N=3]
+                        //                     [1,2,3,4,5],                       [1,2,3],
+                        //                     [1,2,3,4,5],                       [1,2,3],
+                        //                     [1,2,3,4,5],                       [1,2,3],
+                        //                     [1,2,3,4,5],                       [1,2,3]]
+                        //                     [1,2,3,4,5],
+                        //                     [1,2,3,4,5]]
+                        //              res = [[15, 30, 45], padded tens.data = [[1,2,3,0], [M=7,K=5] @ [K=5, N=4]
+                        //                     [15, 30, 45],                     [1,2,3,0],
+                        //                     [15, 30, 45],                     [1,2,3,0],
+                        //                     [15, 30, 45],                     [1,2,3,0],
+                        //                     [15, 30, 45],                     [1,2,3,0],
+                        //                     [15, 30, 45],                     [1,2,3,0]]
+                        //                     [15, 30, 45]]
+                        //
+                        //                     [(1+2+3+4+5), (2+4+6+8+10), (3+6+9+12+15), (0+0+0+0+0)]
+                        //
+                        //                     (i=0,k=2)        splat = {3, 3, 3, 3};
+                        //                     (2(k)*4(vec_w))  t_offset = 8
+                        //
                     }
+                    result.data[r_offset + j ..][0..vec_width].* = r_vec;
                 }
             }
 
@@ -299,7 +393,9 @@ test "tensor fromSlice has correct data" {
 
     try std.testing.expectEqual(@as(usize, 4), tens.len);
     try std.testing.expectEqual(@as(f32, 1), tens.data[0]);
-    try std.testing.expectEqual(@as(f32, 4), tens.data[3]);
+    try std.testing.expectEqual(@as(f32, 2), tens.data[1]);
+    try std.testing.expectEqual(@as(f32, 3), tens.data[4]);
+    try std.testing.expectEqual(@as(f32, 4), tens.data[5]);
 }
 
 test "tensor dtype f16 zeros" {
@@ -341,4 +437,20 @@ test "tensor stride are correct for 1d" {
     defer tens.deinit();
 
     try std.testing.expectEqual(@as(usize, 1), tens.stride[0]);
+}
+
+test "matmul produces correct value" {
+    const gpa = std.testing.allocator;
+    var mat_1_shape = [_]usize{ 3, 3 };
+    var mat_2_shape = [_]usize{ 3, 3 };
+    var data_arr_1 = [_]f32{ 1, 2, 3, 1, 2, 3, 1, 2, 3 };
+    var data_arr_2 = [_]f32{ 1, 2, 3, 1, 2, 3, 1, 2, 3 };
+    var F32FromSlice1: Tensor(f32) = try Tensor(f32).fromSlice(&data_arr_1, &mat_1_shape, gpa);
+    var F32FromSlice2: Tensor(f32) = try Tensor(f32).fromSlice(&data_arr_2, &mat_2_shape, gpa);
+    defer F32FromSlice1.deinit();
+    defer F32FromSlice2.deinit();
+    var res = try F32FromSlice1.matmul(&F32FromSlice2, gpa);
+    defer res.deinit();
+
+    try std.testing.expectEqualSlices(f32, &[_]f32{ 6, 12, 18, 0, 6, 12, 18, 0, 6, 12, 18, 0 }, res.data);
 }
