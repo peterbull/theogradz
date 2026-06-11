@@ -1,0 +1,15 @@
+CompileFlags:
+  Add:
+    - -x
+    - cuda
+    - -nocudainc
+    - -nocudalib
+    - --no-cuda-version-check
+    - -include
+    - /Users/peterbull/peter-projects/theogradz/python/cuda/cuda_stubs.h
+
+Diagnostics:
+  Suppress:
+    - err_kernel_call_not_global_function
+    - err_ref_bad_target
+    - kern_call_not_global_function
