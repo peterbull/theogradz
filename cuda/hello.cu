@@ -11,7 +11,6 @@ __global__ void helloKernel() {
 //   -> threads (1024 per block)
 //   -> streaming multiprocessors(SM) (48)
 //   -> warp size (32 threads per SM)
-
 __device__ void printThreadIdx() { printf("thread: %d\n", threadIdx.x); }
 __device__ void printBlockIdx() { printf("blockIdx: %d\n", blockIdx.x); }
 __device__ void printBlockDim() { printf("blockDim: %d\n", blockDim.x); }
@@ -69,10 +68,13 @@ void runCombineAB() {
 
 // implement a kernel that adds 10 to each position of `a` and stores it in
 // `out`. more threads than positions.
-void addTenManyThreads() {
-  printBlockDim();
-  printBlockIdx();
+__global__ void addTenManyThreads(float *a, float *out, int length) {
   printThreadIdx();
+  int idx = blockIdx.x * blockDim.x + threadIdx.x;
+  if (idx < length) {
+    printf("adding in flat index:%d, thread index: %d\n", idx, threadIdx.x);
+    out[idx] = a[idx] + 10;
+  }
 }
 
 void runAddTenManyThreads() {
@@ -83,7 +85,7 @@ void runAddTenManyThreads() {
   cudaMalloc(&d_a, 8 * sizeof(float));
   cudaMalloc(&d_out, 8 * sizeof(float));
   cudaMemcpy(d_a, a, 8 * sizeof(float), cudaMemcpyHostToDevice);
-  addTenManyThreads<<<32, 8>>>();
+  addTenManyThreads<<<1, 32>>>(d_a, d_out, 8);
   cudaMemcpy(out, d_out, 8 * sizeof(float), cudaMemcpyDeviceToHost);
   printf("back on device");
   printFloatArray(out, 8);
