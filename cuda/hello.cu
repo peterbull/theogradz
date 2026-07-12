@@ -120,7 +120,7 @@ void runAddTen2dSquare() {
   int n = width * height;
 
   float a[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12};
-  float out[12];
+  float out[n];
 
   cudaMalloc(&d_a, n * sizeof(float));
   cudaMalloc(&d_out, n * sizeof(float));
@@ -129,6 +129,47 @@ void runAddTen2dSquare() {
       4, 4); // set to slightly bigger than the array to practice guarding
   dim3 gridDim(1, 1);
   addTen2dSquare<<<gridDim, blockDim>>>(d_a, d_out, width, height);
+  cudaMemcpy(out, d_out, n * sizeof(float), cudaMemcpyDeviceToHost);
+
+  printFloatArray(out, n);
+}
+
+// broadcast
+// Implement a kernel that adds `a` and `b` and stores it in `out`. Inputs `a`
+// and `b` are vectors. more threads than positions.
+__global__ void addAB(float *a, float *b, float *out, int L) {
+  int row = threadIdx.x;
+  int col = threadIdx.y;
+  if (col < L && row < L) {
+    int i = row * L + col;
+    out[i] = a[col] + b[row];
+  }
+}
+
+void runAddAB() {
+  float *d_a;
+  float *d_b;
+  float *d_out;
+
+  int L = 4;
+  int n = L * L;
+
+  float a[] = {1, 2, 3, 4};
+  float b[] = {1, 2, 3, 4};
+
+  float out[n];
+
+  cudaMalloc(&d_a, L * sizeof(float));
+  cudaMalloc(&d_b, L * sizeof(float));
+  cudaMalloc(&d_out, n * sizeof(float));
+  cudaMemcpy(d_a, a, L * sizeof(float), cudaMemcpyHostToDevice);
+  cudaMemcpy(d_b, b, L * sizeof(float), cudaMemcpyHostToDevice);
+
+  dim3 blockDim(6, 6);
+  dim3 gridDim(1, 1);
+
+  addAB<<<gridDim, blockDim>>>(d_a, d_b, d_out, L);
+
   cudaMemcpy(out, d_out, n * sizeof(float), cudaMemcpyDeviceToHost);
 
   printFloatArray(out, n);
