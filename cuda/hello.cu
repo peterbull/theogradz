@@ -175,6 +175,35 @@ void runAddAB() {
   printFloatArray(out, n);
 }
 
+// blocks
+// implement a kernel that adds 10 to each position of `a` and stores it in out.
+// fewer threads per block than the size of `a`
+__global__ void addABlocks(float *a, float *out, int length) {
+  int idx = blockIdx.x * blockDim.x + threadIdx.x;
+  if (idx < length) {
+    printKernelInfo();
+    out[idx] = a[idx] + 10;
+  }
+}
+
+void runAddABlocks() {
+  float *d_a;
+  float *d_out;
+  int n = 8;
+  int threadsPerBlock = 4;
+  int numBlocks = 2;
+  float a[] = {1, 2, 3, 4, 5, 6, 7, 8};
+  float out[8];
+
+  cudaMalloc(&d_a, n * sizeof(float));
+  cudaMalloc(&d_out, n * sizeof(float));
+  cudaMemcpy(d_a, a, n * sizeof(float), cudaMemcpyHostToDevice);
+  dim3 blockDim(threadsPerBlock);
+  dim3 gridDim(numBlocks);
+  addABlocks<<<gridDim, blockDim>>>(d_a, d_out, n);
+  cudaMemcpy(out, d_out, n * sizeof(float), cudaMemcpyDeviceToHost);
+  printFloatArray(out, n);
+}
 int main() {
   // float *d_a;
   // float *d_out;
