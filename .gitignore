@@ -1,3 +1,17 @@
 .zig-cache/
 zig-out/
 *.o
+#
+# mkmf generated
+Makefile
+mkmf.log
+
+# build artifacts
+*.o
+*.bundle
+*.bundle.dSYM/
+*.so
+*.dylib
+
+# clangd cache
+.cache/
