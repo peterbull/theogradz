@@ -1,2 +1,13 @@
 CompileFlags:
-  Add: [-xc]
+  Add:
+    - -x
+    - cuda
+    - -nocudainc
+    - -nocudalib
+    - --no-cuda-version-check
+
+Diagnostics:
+  Suppress:
+    - err_kernel_call_not_global_function
+    - err_ref_bad_target
+    - kern_call_not_global_function

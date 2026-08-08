@@ -31,6 +31,7 @@ void printFloatArray(float *arr, int n) {
 __global__ void addTen(float *a, float *out) {
   out[threadIdx.x] = a[threadIdx.x] + 10;
 }
+
 void runAddTen() {
   float *d_a;
   float *d_out;
@@ -175,35 +176,43 @@ void runAddAB() {
   printFloatArray(out, n);
 }
 
-// blocks
+// blocks(explicit tiles)
 // implement a kernel that adds 10 to each position of `a` and stores it in out.
 // fewer threads per block than the size of `a`
 __global__ void addABlocks(float *a, float *out, int length) {
   int idx = blockIdx.x * blockDim.x + threadIdx.x;
+  printf("idx %d\n", idx);
+  extern __shared__ float buf[];
   if (idx < length) {
-    printKernelInfo();
-    out[idx] = a[idx] + 10;
+    // printKernelInfo();
+    buf[threadIdx.x] = a[idx];
+    printf("buf data: %f\n", buf[threadIdx.x]);
+    // __syncthreads();
+    out[idx] = buf[threadIdx.x] + 10;
   }
 }
 
 void runAddABlocks() {
   float *d_a;
   float *d_out;
-  int n = 8;
+  int n = 16;
   int threadsPerBlock = 4;
   int numBlocks = 2;
-  float a[] = {1, 2, 3, 4, 5, 6, 7, 8};
-  float out[8];
+  float a[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
+  float out[16];
 
-  cudaMalloc(&d_a, n * sizeof(float));
-  cudaMalloc(&d_out, n * sizeof(float));
-  cudaMemcpy(d_a, a, n * sizeof(float), cudaMemcpyHostToDevice);
+  int sizeInBytes = n * sizeof(float);
+
+  cudaMalloc(&d_a, sizeInBytes);
+  cudaMalloc(&d_out, sizeInBytes);
+  cudaMemcpy(d_a, a, sizeInBytes, cudaMemcpyHostToDevice);
   dim3 blockDim(threadsPerBlock);
   dim3 gridDim(numBlocks);
-  addABlocks<<<gridDim, blockDim>>>(d_a, d_out, n);
-  cudaMemcpy(out, d_out, n * sizeof(float), cudaMemcpyDeviceToHost);
+  addABlocks<<<gridDim, blockDim, sizeInBytes>>>(d_a, d_out, n);
+  cudaMemcpy(out, d_out, sizeInBytes, cudaMemcpyDeviceToHost);
   printFloatArray(out, n);
 }
+
 int main() {
   // float *d_a;
   // float *d_out;
@@ -221,7 +230,8 @@ int main() {
   // helloKernel<<<1028, 4>>>();
   // runAddTen();
   // runCombineAB();
-  runAddTen2dSquare();
-  cudaDeviceSynchronize();
+  // runAddTen2dSquare();
+  // cudaDeviceSynchronize();
+  runAddABlocks();
   return 0;
 }
