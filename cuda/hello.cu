@@ -180,26 +180,29 @@ void runAddAB() {
 // implement a kernel that adds 10 to each position of `a` and stores it in out.
 // fewer threads per block than the size of `a`
 __global__ void addABlocks(float *a, float *out, int length) {
-  int idx = blockIdx.x * blockDim.x + threadIdx.x;
-  printf("idx %d\n", idx);
   extern __shared__ float buf[];
+  int idx = blockIdx.x * blockDim.x + threadIdx.x;
+  int local_i = threadIdx.x;
+  printf("local i: %d\n", local_i);
   if (idx < length) {
-    // printKernelInfo();
-    buf[threadIdx.x] = a[idx];
-    printf("buf data: %f\n", buf[threadIdx.x]);
-    // __syncthreads();
-    out[idx] = buf[threadIdx.x] + 10;
+    buf[local_i] = a[idx];
+  }
+  // shared buffer is only shared to other threads on a block
+  // no race cond. in this one, more to just get familiar with declaring/syncing
+  __syncthreads();
+  if (idx < length) {
+    out[idx] = buf[local_i] + 10;
   }
 }
 
 void runAddABlocks() {
   float *d_a;
   float *d_out;
-  int n = 16;
+  int n = 8;
   int threadsPerBlock = 4;
   int numBlocks = 2;
-  float a[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
-  float out[16];
+  float a[] = {1, 2, 3, 4, 5, 6, 7, 8};
+  float out[8];
 
   int sizeInBytes = n * sizeof(float);
 
