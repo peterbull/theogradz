@@ -216,6 +216,51 @@ void runAddABlocks() {
   printFloatArray(out, n);
 }
 
+// pooling
+// a kernel that sums together the last 3 positions of `a` and stores it in
+// `out` 1 thread per position.
+__global__ void aPooling(float *a, float *out, int length) {
+  __shared__ float buf[8];
+  int idx = blockIdx.x * blockDim.x + threadIdx.x;
+  int local_i = threadIdx.x;
+  if (idx < length) {
+    buf[local_i] = a[idx];
+  }
+  __syncthreads();
+
+  if (idx < length) {
+    float total = buf[local_i];
+    if (idx > 0) {
+      total += buf[local_i - 1];
+    }
+    if (idx > 1) {
+      total += buf[local_i - 2];
+    }
+    out[idx] = total;
+  }
+}
+
+void runAPooling() {
+  float *d_a;
+  float *d_out;
+  int n = 8;
+  int threadsPerBlock = n;
+  int numBlocks = 1;
+  float a[] = {0, 1, 2, 3, 4, 5, 6, 7};
+  float out[8];
+
+  int sizeInBytes = n * sizeof(float);
+
+  cudaMalloc(&d_a, sizeInBytes);
+  cudaMalloc(&d_out, sizeInBytes);
+  cudaMemcpy(d_a, a, sizeInBytes, cudaMemcpyHostToDevice);
+  dim3 blockDim(threadsPerBlock);
+  dim3 gridDim(numBlocks);
+  aPooling<<<gridDim, blockDim, sizeInBytes>>>(d_a, d_out, n);
+  cudaMemcpy(out, d_out, sizeInBytes, cudaMemcpyDeviceToHost);
+  printFloatArray(out, n);
+}
+
 int main() {
   // float *d_a;
   // float *d_out;
@@ -235,6 +280,7 @@ int main() {
   // runCombineAB();
   // runAddTen2dSquare();
   // cudaDeviceSynchronize();
-  runAddABlocks();
+  // runAddABlocks();
+  runAPooling();
   return 0;
 }
