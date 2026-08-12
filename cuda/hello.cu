@@ -261,6 +261,45 @@ void runAPooling() {
   printFloatArray(out, n);
 }
 
+// dot product
+// a kernel that computes the dot-product of `a` and `b` and stores it in `out`.
+// 1 thread per position
+__global__ void dotProduct(float *a, float *b, float *out, int length) {
+  __shared__ float buf[4];
+  int idx = blockIdx.x * blockDim.x + threadIdx.x;
+  printf("idx: %d\n", idx);
+  int local_i = threadIdx.x;
+  if (idx < length) {
+    // failure mode, racing and overwriting
+    float res = a[idx] * b[idx];
+    printf("res: %f\n", res);
+    out[0] += res;
+  }
+}
+
+void runDotProduct() {
+  float *d_a;
+  float *d_b;
+  float *d_out;
+  int n = 4;
+  int threadsPerBlock = n;
+  int numBlocks = 1;
+  float a[] = {0, 1, 2, 3};
+  float b[] = {0, 1, 2, 3};
+  float out[1];
+  int sizeInBytes = n * sizeof(float);
+  cudaMalloc(&d_a, sizeInBytes);
+  cudaMalloc(&d_b, sizeInBytes);
+  cudaMalloc(&d_out, sizeof(float));
+  cudaMemcpy(d_a, a, sizeInBytes, cudaMemcpyHostToDevice);
+  cudaMemcpy(d_b, b, sizeInBytes, cudaMemcpyHostToDevice);
+  dim3 blockDim(threadsPerBlock);
+  dim3 gridDim(numBlocks);
+  dotProduct<<<gridDim, blockDim, sizeInBytes>>>(d_a, d_b, d_out, n);
+  cudaMemcpy(out, d_out, sizeof(float), cudaMemcpyDeviceToHost);
+  printFloatArray(out, 1);
+}
+
 int main() {
   // float *d_a;
   // float *d_out;
@@ -281,6 +320,7 @@ int main() {
   // runAddTen2dSquare();
   // cudaDeviceSynchronize();
   // runAddABlocks();
-  runAPooling();
+  // runAPooling();
+  runDotProduct();
   return 0;
 }
