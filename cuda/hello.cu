@@ -265,15 +265,28 @@ void runAPooling() {
 // a kernel that computes the dot-product of `a` and `b` and stores it in `out`.
 // 1 thread per position
 __global__ void dotProduct(float *a, float *b, float *out, int length) {
-  __shared__ float buf[4];
+  extern __shared__ float buf[];
   int idx = blockIdx.x * blockDim.x + threadIdx.x;
   printf("idx: %d\n", idx);
   int local_i = threadIdx.x;
-  if (idx < length) {
-    // failure mode, racing and overwriting
-    float res = a[idx] * b[idx];
-    printf("res: %f\n", res);
-    out[0] += res;
+
+  // assign each elementwise result to a location in the shared buffer
+  // wait for all threads to finish before proceeding
+  buf[local_i] = (idx < length) ? a[idx] * b[idx] : 0.0f;
+  __syncthreads();
+  // reducer with a stride(s) to represent how far apart
+  // op items are in the buffer. bitshift each loop to cut the space in half.
+  for (unsigned int s = blockDim.x / 2; s > 0; s >>= 1) {
+    if (local_i < s) {
+      printf("local i: %d :: op1: %f :: op2: %f :: s: %d :: blockdim: %d\n",
+             local_i, buf[local_i], buf[local_i + s], local_i, blockDim.x);
+      buf[local_i] += buf[local_i + s];
+    }
+    __syncthreads();
+  }
+
+  if (idx == 0) {
+    atomicAdd(&out[0], buf[0]);
   }
 }
 
@@ -281,11 +294,11 @@ void runDotProduct() {
   float *d_a;
   float *d_b;
   float *d_out;
-  int n = 4;
+  int n = 8;
   int threadsPerBlock = n;
   int numBlocks = 1;
-  float a[] = {0, 1, 2, 3};
-  float b[] = {0, 1, 2, 3};
+  float a[] = {0, 1, 2, 3, 4, 5, 6, 7};
+  float b[] = {0, 1, 2, 3, 4, 5, 6, 7};
   float out[1];
   int sizeInBytes = n * sizeof(float);
   cudaMalloc(&d_a, sizeInBytes);
