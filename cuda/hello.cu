@@ -312,6 +312,47 @@ void runDotProduct() {
   cudaMemcpy(out, d_out, sizeof(float), cudaMemcpyDeviceToHost);
   printFloatArray(out, 1);
 }
+// 1d convolution
+// kernel that computes a 1D convolution between `a` and `b` and stores it in
+// `out`. handle the general case
+__global__ void oneDConv(float *a, float *b, float *out, int length, int l2) {
+  __shared__ float buf[12];
+  int idx = blockIdx.x * blockDim.x + threadIdx.x;
+  int tid = threadIdx.x;
+  if (idx < length) {
+    // buf[tid] =
+  }
+}
+
+void runOneDConv() {
+  float *d_a;
+  float *d_b;
+  float *d_out;
+  const int n = 8;
+  int threadsPerBlock = n;
+  const int numBlocks = 3;
+  const int l1 = 15;
+  const int l2 = 4;
+  float a[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14};
+  float b[] = {0, 1, 2, 3};
+  const int outN = 18;
+  float out[outN];
+  int sizeA = l1 * sizeof(float);
+  int sizeB = l2 * sizeof(float);
+  int sizeOut = outN * sizeof(float);
+  int sharedMemBytes = (threadsPerBlock + l2 - 1) * sizeof(float);
+  cudaMalloc(&d_a, sizeA);
+  cudaMalloc(&d_b, sizeB);
+  cudaMalloc(&d_out, sizeOut);
+
+  cudaMemcpy(d_a, a, sizeA, cudaMemcpyHostToDevice);
+  cudaMemcpy(d_b, b, sizeB, cudaMemcpyHostToDevice);
+  dim3 blockDim(threadsPerBlock);
+  dim3 gridDim(numBlocks);
+  oneDConv<<<gridDim, blockDim, sharedMemBytes>>>(d_a, d_b, d_out, l1, l2);
+  cudaMemcpy(out, d_out, sizeof(float), cudaMemcpyDeviceToHost);
+  printFloatArray(out, 1);
+}
 
 int main() {
   // float *d_a;
@@ -334,6 +375,7 @@ int main() {
   // cudaDeviceSynchronize();
   // runAddABlocks();
   // runAPooling();
-  runDotProduct();
+  // runDotProduct();
+  runOneDConv();
   return 0;
 }
