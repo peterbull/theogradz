@@ -3,7 +3,6 @@ zig-out/
 *.o
 #
 # mkmf generated
-Makefile
 mkmf.log
 
 # build artifacts
@@ -17,3 +16,4 @@ mkmf.log
 .cache/
 
 **/data/*
+compile_commands.json

@@ -1,3 +1,6 @@
+If:
+  PathMatch: cuda/.*
+
 CompileFlags:
   Add:
     - -x
